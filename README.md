@@ -2,11 +2,11 @@
 
 Slack Bot Sample with Go and slack-go
 
-# 実装済み
+## 実装済み
 
-## reply command
+### reply command
 
-### ping
+#### ping
 
 Bot に Reply で `ping` を送信すると `pong` を返信します。
 
@@ -15,20 +15,26 @@ Bot に Reply で `ping` を送信すると `pong` を返信します。
 pong
 ```
 
-### gohan
-
-## slash command
+#### gohan
 
 T.B.D
 
-# setup
+#### Jankichi kun
 
-## ローカルで実行する
+T.B.D
 
+### slash command
 
+T.B.D
 
-## ECSにデプロイする
+## setup
 
-# License
+### ローカルで実行する
+
+See [Deploy Local And Test](./doc/deploy-local.md)
+
+### ECSにデプロイする
+
+## License
 
 The source code is licensed MIT. The website content is licensed CC BY 4.0,see LICENSE.
