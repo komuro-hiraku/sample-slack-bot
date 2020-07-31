@@ -3,6 +3,7 @@ package main
 // https://qiita.com/frozenbonito/items/cf75dadce12ef9a048e9
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,8 +12,10 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/kawasin73/htask"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 )
@@ -28,31 +31,7 @@ func main() {
 
 	http.HandleFunc("/slack/events", slackVerificationMiddleware(func(w http.ResponseWriter, r *http.Request) {
 
-		// SlackからのRequestであることを検証する
-		// verifier, err := slack.NewSecretsVerifier(r.Header, os.Getenv("SLACK_SIGNING_SECRET"))
-		// if err != nil {
-		// 	log.Println(err)
-		// 	w.WriteHeader(http.StatusInternalServerError)
-		// 	return
-		// }
-
-		// bodyReader := io.TeeReader(r.Body, &verifier)
-		// // Request Bodyを全部読み込む
-		// body, err := ioutil.ReadAll(bodyReader)
-
-		// if err != nil {
-		// 	log.Println(err)                              // errorをログ表示
-		// 	w.WriteHeader(http.StatusInternalServerError) // 500エラーをヘッダに書き込んでレスポンス
-		// 	return
-		// }
-
-		// if err := verifier.Ensure(); err != nil {
-		// 	log.Println(err)
-		// 	w.WriteHeader(http.StatusBadRequest) // verifyに失敗したらBadRequest
-		// 	return
-		// }
-
-		// 諸々上記コードは slackVerificationMiddleware で検証済み
+		// slackVerificationMiddleware で Slack からの通信であることは検証済み
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			log.Println(err)
@@ -60,6 +39,7 @@ func main() {
 			return
 		}
 
+		// slack の Event をパース
 		eventsAPIEvent, err := slackevents.ParseEvent(json.RawMessage(body), slackevents.OptionNoVerifyToken())
 		if err != nil {
 			log.Println(err)
@@ -87,7 +67,7 @@ func main() {
 		case slackevents.CallbackEvent:
 			innerEvent := eventsAPIEvent.InnerEvent
 
-			// innerEvent.Data.(type) ってなんだ・・・
+			// TODO: innerEvent.Data.(type) ってなんだ・・・？
 			switch event := innerEvent.Data.(type) {
 			case *slackevents.AppMentionEvent:
 				message := strings.Split(event.Text, " ")
@@ -138,8 +118,66 @@ func main() {
 						w.WriteHeader(http.StatusInternalServerError)
 						return
 					}
+				case "conversations":
+					// create channel
+					t := time.Now()
+
+					// CreateChannelはDepreacted
+					c, err := api.CreateConversation(fmt.Sprintf("temp-test-%d", t.Unix()), false)
+					if err != nil {
+						log.Println(err)
+						w.WriteHeader(http.StatusInternalServerError)
+						return
+					}
+
+					log.Println(c)
+
+				case "check":
+					if len(message) != 3 {
+						log.Println(message)
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+
+					timestamp := message[2]
+					startSchedule(func() {
+						if _, _, err := api.PostMessage(event.Channel, slack.MsgOptionText(fmt.Sprintf("<@%s> reactions %s", event.BotID, timestamp), false)); err != nil {
+							log.Println(err)
+							w.WriteHeader(http.StatusInternalServerError)
+							return
+						}
+					})
+				case "reactions":
+					if len(message) != 3 {
+						log.Println(message)
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+
+					timestamp := message[2]
+					f := convertFloatString(timestamp)
+
+					msgRef := slack.NewRefToMessage(event.Channel, f)
+					log.Printf("msgRef : %s\n", msgRef)
+					msgReactions, err := api.GetReactions(msgRef, slack.NewGetReactionsParameters())
+					if err != nil {
+						log.Println(err)
+						w.WriteHeader(http.StatusInternalServerError)
+						return
+					}
+
+					for _, r := range msgReactions {
+						log.Println(r)
+
+						if _, _, err := api.PostMessage(event.Channel, slack.MsgOptionText(fmt.Sprintf(":%s:", r.Name), false)); err != nil {
+							log.Println(err)
+							w.WriteHeader(http.StatusInternalServerError)
+							return
+						}
+					}
 				}
 			}
+
 		}
 	}))
 
@@ -248,7 +286,34 @@ func slackVerificationMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// Gohan コマンドのダミー操作
 func cookinggohan(gohan string) {
 	log.Printf("cooking %s now. wait a minutes", gohan)
 	time.Sleep(10 * time.Second)
+}
+
+// SlackのメッセージIDをfloat形式に変換する
+func convertFloatString(t string) string {
+	length := len(t)
+	mid := length - 6
+	return fmt.Sprintf("%s.%s", t[:mid], t[mid:])
+}
+
+// 10秒後に実行するスケジューラ
+func startSchedule(task func()) {
+	var wg sync.WaitGroup
+	workers := 1
+	scheduler := htask.NewScheduler(&wg, workers)
+
+	ctx, _ := context.WithCancel(context.Background())
+	scheduler.Set(ctx.Done(), time.Now().Add(10*time.Second), func(t time.Time) {
+		log.Println("Schedule Executed")
+		task()
+	})
+
+	// scheduler.ChangeWorkers(2) // これなにしてる？
+	defer scheduler.Close()
+	defer wg.Wait()
+
+	log.Println("Scheduled")
 }
