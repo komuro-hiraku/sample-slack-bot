@@ -141,7 +141,7 @@ func main() {
 
 					timestamp := message[2]
 					startSchedule(func() {
-						if _, _, err := api.PostMessage(event.Channel, slack.MsgOptionText(fmt.Sprintf("<@%s> reactions %s", event.BotID, timestamp), false)); err != nil {
+						if _, _, err := api.PostMessage(event.Channel, slack.MsgOptionText(fmt.Sprintf("<@%s> reactions %s", "A017C1D07AR", timestamp), false)); err != nil {
 							log.Println(err)
 							w.WriteHeader(http.StatusInternalServerError)
 							return
@@ -154,9 +154,11 @@ func main() {
 						return
 					}
 
+					// 2つ目の項目はメッセージIDとして取得. float形式の文字列に変換する
 					timestamp := message[2]
 					f := convertFloatString(timestamp)
 
+					// メッセージの参照を作成
 					msgRef := slack.NewRefToMessage(event.Channel, f)
 					log.Printf("msgRef : %s\n", msgRef)
 					msgReactions, err := api.GetReactions(msgRef, slack.NewGetReactionsParameters())
@@ -166,10 +168,11 @@ func main() {
 						return
 					}
 
+					// reaction を POST
 					for _, r := range msgReactions {
 						log.Println(r)
 
-						if _, _, err := api.PostMessage(event.Channel, slack.MsgOptionText(fmt.Sprintf(":%s:", r.Name), false)); err != nil {
+						if _, _, err := api.PostMessage(event.Channel, slack.MsgOptionText(fmt.Sprintf("%s :%s:", r.Users, r.Name), false)); err != nil {
 							log.Println(err)
 							w.WriteHeader(http.StatusInternalServerError)
 							return
